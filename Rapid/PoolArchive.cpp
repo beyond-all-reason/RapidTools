@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <unordered_set>
+#include <iostream>
 
 #include <zip.h>
 #include <assert.h>
@@ -40,8 +42,8 @@ void PoolArchiveT::load(DigestT const & Digest)
 		In.readExpected(Checksum, 4);
 		In.readExpected(Size, 4);
 		Pair.first = {Name, Length};
-		Marshal::unpackLittle(Pair.second.Checksum, Checksum);
-		Marshal::unpackLittle(Pair.second.Size, Size);
+		Marshal::unpackBig(Pair.second.Checksum, Checksum);
+		Marshal::unpackBig(Pair.second.Size, Size);
 		mEntries.insert(Pair);
 	}
 }
@@ -65,8 +67,8 @@ ArchiveEntryT PoolArchiveT::save()
 
 	for (auto & Pair : mEntries)
 	{
-		Marshal::packLittle(Pair.second.Checksum, ChecksumBuffer);
-		Marshal::packLittle(Pair.second.Size, SizeBuffer);
+		Marshal::packBig(Pair.second.Checksum, ChecksumBuffer);
+		Marshal::packBig(Pair.second.Size, SizeBuffer);
 		unsigned char Length = Pair.first.size();
 		Out.write(&Length, 1);
 		Out.write(Pair.first.data(), Length);
@@ -181,9 +183,9 @@ ChecksumT PoolArchiveT::getChecksum()
 		Crc32T NameCrc32;
 		NameCrc32.update(Pair.first.data(), Pair.first.size());
 		auto NameChecksum = NameCrc32.final();
-		Marshal::packBig(NameChecksum, ChecksumBuffer);
+		Marshal::packLittle(NameChecksum, ChecksumBuffer);
 		Crc32.update(ChecksumBuffer, 4);
-		Marshal::packBig(Pair.second.Checksum, ChecksumBuffer);
+		Marshal::packLittle(Pair.second.Checksum, ChecksumBuffer);
 		Crc32.update(ChecksumBuffer, 4);
 	}
 
@@ -208,8 +210,13 @@ ssize_t handleZip(void * State, void * Data, std::size_t Length, enum zip_source
 
 	case ZIP_SOURCE_OPEN:
 	{
-		UserData.File = gzopen(UserData.Store.getPoolPath(UserData.Entry.Digest).c_str(), "rb");
-		if (UserData.File == nullptr) return -1;
+		const std::string filename = UserData.Store.getPoolPath(UserData.Entry.Digest);
+		UserData.File = gzopen(filename.c_str(), "rb");
+		if (UserData.File == nullptr)
+		{
+			throw std::runtime_error("Failed to open:" + filename);
+			return -1;
+		}
 		else return 0;
 	} break;
 
@@ -233,6 +240,7 @@ ssize_t handleZip(void * State, void * Data, std::size_t Length, enum zip_source
 
 	case ZIP_SOURCE_ERROR:
 	{
+		throw std::runtime_error{"Error in handleZip()"};
 		return sizeof(int) * 2;
 	} break;
 
@@ -242,9 +250,17 @@ ssize_t handleZip(void * State, void * Data, std::size_t Length, enum zip_source
 		return 0;
 	} break;
 
-	// Unnecessary, but squelches a GCC warning
-	default: return 0;
+#if LIBZIP_VERSION_MAJOR >= 1
+	case ZIP_SOURCE_SUPPORTS:
+	{
+		return zip_source_make_command_bitmap(ZIP_SOURCE_OPEN, ZIP_SOURCE_READ, ZIP_SOURCE_CLOSE, ZIP_SOURCE_STAT, ZIP_SOURCE_ERROR, ZIP_SOURCE_FREE);
+	}
 
+#endif
+	// Unnecessary, but squelches a GCC warning
+	default:
+		std::cerr << "Unknown zip command: " << Cmd << std::endl;
+		return 0;
 	}
 }
 
@@ -260,15 +276,33 @@ void PoolArchiveT::makeZip(std::string const & Path)
 	// Begin exception free zone (except new)
 	for (auto & Pair : mEntries)
 	{
-		auto UserData = new UserDataT{nullptr, mStore, Pair.second};
+		UserDataT* UserData = new UserDataT{nullptr, mStore, Pair.second};
 		auto Source = zip_source_function(Zip, &handleZip, UserData);
+#if LIBZIP_VERSION_MAJOR >= 1
+		if (zip_file_add(Zip, Pair.first.c_str(), Source, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8) < 0) {
+			throw std::runtime_error{"Unable addinf file to zip"};
+		}
+#else
 		zip_add(Zip, Pair.first.c_str(), Source);
+#endif
 	}
 
 	Error = zip_close(Zip);
 	// End exception free zone
-	if (Error != 0) throw std::runtime_error{"Unable to create zip"};
-
+	if (Error != 0)
+	{
+		std::string errorstr;
+#if LIBZIP_VERSION_MAJOR >= 1
+		zip_error_t error;
+		zip_error_init_with_code(&error, Error);
+		if (auto errcstr = zip_error_strerror(&error); errcstr != NULL) {
+			errorstr = errcstr;
+		}
+		zip_error_fini(&error);
+#endif
+		throw std::runtime_error{"Unable to close zip " + errorstr};
+	}
 }
+
 
 }

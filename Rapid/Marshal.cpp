@@ -3,7 +3,7 @@
 namespace Rapid {
 namespace Marshal {
 
-void packLittle(std::uint32_t Word, unsigned char * Bytes)
+void packBig(std::uint32_t Word, unsigned char * Bytes)
 {
 	Bytes[0] = Word >> 24 & 0xFF;
 	Bytes[1] = Word >> 16 & 0xFF;
@@ -11,7 +11,7 @@ void packLittle(std::uint32_t Word, unsigned char * Bytes)
 	Bytes[3] = Word >> 0 & 0xFF;
 }
 
-void unpackLittle(std::uint32_t & Word, unsigned char const * Bytes)
+void unpackBig(std::uint32_t & Word, unsigned char const * Bytes)
 {
 	Word = 0;
 	Word = Bytes[0] << 24 | Word;
@@ -20,7 +20,7 @@ void unpackLittle(std::uint32_t & Word, unsigned char const * Bytes)
 	Word = Bytes[3] << 0 | Word;
 }
 
-void packBig(std::uint32_t Word, unsigned char * Bytes)
+void packLittle(std::uint32_t Word, unsigned char * Bytes)
 {
 	Bytes[0] = Word >> 0 & 0xFF;
 	Bytes[1] = Word >> 8 & 0xFF;
@@ -28,7 +28,7 @@ void packBig(std::uint32_t Word, unsigned char * Bytes)
 	Bytes[3] = Word >> 24 & 0xFF;
 }
 
-void unpackBig(std::uint32_t & Word, unsigned char const * Bytes)
+void unpackLittle(std::uint32_t & Word, unsigned char const * Bytes)
 {
 	Word = 0;
 	Word = Bytes[0] << 0 | Word;

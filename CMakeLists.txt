@@ -1,79 +1,61 @@
-cmake_minimum_required (VERSION 2.8)
-project (RapidTools)
+cmake_minimum_required(VERSION 3.18)
+project(RapidTools CXX)
 
-set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/CMake/")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package (Lua51 REQUIRED)
-find_package (ZLIB REQUIRED)
-find_package (Zip REQUIRED)
+# Only Linux is supported, so we can fully depend on pkg-config
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(zlib REQUIRED IMPORTED_TARGET zlib)
+pkg_check_modules(lua51 REQUIRED IMPORTED_TARGET lua51)
+pkg_check_modules(libgit2 REQUIRED IMPORTED_TARGET libgit2)
+pkg_check_modules(libzip REQUIRED IMPORTED_TARGET libzip)
 
-include_directories (
-	External/libgit2/include
-	External
-	${LUA_INCLUDE_DIR}
-	${ZIP_INCLUDE_DIR}
-	${ZLIB_INCLUDE_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}
+add_subdirectory(External/md5)
+
+add_library(Rapid
+    Rapid/ArchiveEntry.cpp
+    Rapid/BitArray.cpp
+    Rapid/Crc32.cpp
+    Rapid/FileEntry.cpp
+    Rapid/Gzip.cpp
+    Rapid/Hex.cpp
+    Rapid/Last.cpp
+    Rapid/LastGit.cpp
+    Rapid/Lua.cpp
+    Rapid/Marshal.cpp
+    Rapid/Md5.cpp
+    Rapid/Optional.cpp
+    Rapid/PoolArchive.cpp
+    Rapid/PoolFile.cpp
+    Rapid/ScopeGuard.cpp
+    Rapid/Store.cpp
+    Rapid/String.cpp
+    Rapid/TempFile.cpp
+    Rapid/Versions.cpp
+    Rapid/Zip.cpp
+    Rapid/ZipFile.cpp
+)
+target_link_libraries(Rapid
+    PUBLIC md5 PkgConfig::lua51 PkgConfig::zlib PkgConfig::libzip
+)
+target_include_directories(Rapid
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-set (standard "-std=c++0x")
-set (warning "-pedantic -Wall -Wextra -Wshadow -Wno-unused-variable")
-set (debug "-ggdb")
-set (release "-DNDEBUG -O3 -flto")
-set (symbol "-fno-rtti -fdata-sections -ffunction-sections")
-set (linker_symbol "-Wl,--gc-sections")
+add_executable(rapid-addzip Tools/AddZip.cpp)
+target_link_libraries(rapid-addzip Rapid)
 
-set (CMAKE_CXX_FLAGS "${standard} ${warning}")
-set (CMAKE_CXX_FLAGS_DEBUG "${debug}")
-set (CMAKE_CXX_FLAGS_RELEASE "${release} ${symbol}")
-set (CMAKE_EXE_LINKER_FLAGS_RELEASE "${linker_symbol}")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${release} ${symbol} ${debug}")
-set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${linker_symbol}")
+add_executable(rapid-makezip Tools/MakeZip.cpp)
+target_link_libraries(rapid-makezip Rapid)
 
-set(BUILD_CLAR OFF CACHE BOOL "" FORCE)
-add_subdirectory (External/libgit2)
+add_executable(rapid-buildgit Tools/BuildGit.cpp)
+target_link_libraries(rapid-buildgit Rapid PkgConfig::libgit2)
 
-add_library (Rapid
-	External/md5/md5.cpp
-	Rapid/ArchiveEntry.cpp
-	Rapid/BitArray.cpp
-	Rapid/Crc32.cpp
-	Rapid/FileEntry.cpp
-	Rapid/Gzip.cpp
-	Rapid/Hex.cpp
-	Rapid/Last.cpp
-	Rapid/LastGit.cpp
-	Rapid/Lua.cpp
-	Rapid/Marshal.cpp
-	Rapid/Md5.cpp
-	Rapid/Optional.cpp
-	Rapid/PoolArchive.cpp
-	Rapid/PoolFile.cpp
-	Rapid/ScopeGuard.cpp
-	Rapid/Store.cpp
-	Rapid/String.cpp
-	Rapid/TempFile.cpp
-	Rapid/Versions.cpp
-	Rapid/Zip.cpp
-	Rapid/ZipFile.cpp)
+add_executable(rapid-streamer Tools/Streamer.cpp)
+target_link_libraries(rapid-streamer Rapid)
 
-target_link_libraries (Rapid
-	git2
-	${APR_LIBRARIES}
-	${APRUTIL_LIBRARIES}
-	${LUA_LIBRARIES}
-	${ZIP_LIBRARIES}
-	${ZLIB_LIBRARIES})
+include(GNUInstallDirs)
 
-add_executable (AddZip Tools/AddZip.cpp)
-target_link_libraries (AddZip Rapid)
-
-add_executable (BuildGit Tools/BuildGit.cpp)
-target_link_libraries (BuildGit Rapid)
-
-add_executable (MakeZip Tools/MakeZip.cpp)
-target_link_libraries (MakeZip Rapid)
-
-add_executable (Streamer Tools/Streamer.cpp)
-target_link_libraries (Streamer Rapid)
-
+install(TARGETS rapid-addzip rapid-makezip rapid-buildgit rapid-streamer Rapid)

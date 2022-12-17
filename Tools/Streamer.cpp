@@ -9,7 +9,6 @@
 #include <string>
 #include <stdexcept>
 #include <cstdio>
-#include <ctime>
 
 #include <fcntl.h>
 #include <sys/sendfile.h>
@@ -28,9 +27,7 @@ struct StreamEntryT
 	std::size_t Size;
 };
 
-void stream(
-	std::string const & StorePath, std::string const & Hexed,
-	std::string const & ServerProtocol, std::string const & ServerSoftware)
+void stream(std::string const & StorePath, std::string const & Hexed)
 {
 	// Read bit array
 	auto File = gzdopen(fileno(stdin), "rb");
@@ -41,7 +38,11 @@ void stream(
 	{
 		auto Bytes = gzread(File, Buffer, 4096);
 		if (Bytes < 0) throw std::runtime_error{"Error reading bit array"};
-		if (Bytes == 0) break;
+		if (Bytes == 0) {
+			if (gzeof(File)) break;
+			std::cerr << "Error calling gzread from POST data: "
+			          << gzerror(File, nullptr) << std::endl;
+		}
 		Bits.append(Buffer, Bytes);
 	}
 
@@ -71,15 +72,7 @@ void stream(
 		TotalSize += 4;
 	});
 
-	// Format current date according to RFC 1123
-	auto Time = std::time(nullptr);
-	char Date[128];
-	auto DateSize = std::strftime(Date, sizeof(Date), "%a, %d %b %Y %H:%M:%S GMT", std::gmtime(&Time));
-
-	// Repond to request
-	std::cout << ServerProtocol << " 200 OK\r\n";
-	std::cout << "Date: "; std::cout.write(Date, DateSize) << "\r\n";
-	std::cout << "Server: " << ServerSoftware << "\r\n";
+	// Respond to request
 	std::cout << "Content-Transfer-Encoding: binary\r\n";
 	std::cout << "Content-Length: " << TotalSize << "\r\n";
 	std::cout << "Content-Type: application/octet-stream\r\n";
@@ -92,10 +85,16 @@ void stream(
 		const int In = open(Path.c_str(), O_RDONLY);
 		if (In < 0) throw std::runtime_error{"Error opening pool file"};
 		std::uint8_t Bytes[4];
-		Marshal::packLittle(Entry.Size, Bytes);
+		Marshal::packBig(Entry.Size, Bytes);
 		std::cout.write(reinterpret_cast<char *>(Bytes), 4);
 		std::cout.flush();
-		sendfile(STDOUT_FILENO, In, 0, Entry.Size);
+		for (std::size_t left = Entry.Size; left > 0;) {
+			ssize_t written = sendfile(STDOUT_FILENO, In, 0, left);
+			if (written < 0) {
+				throw std::runtime_error{"Sendfile failed"};
+			}
+			left -= written;
+		}
 		close(In);
 	}
 }
@@ -106,16 +105,7 @@ int main(int argc, char const * const * argv, char const * const * env)
 {
 	umask(0002);
 
-	auto DocumentRoot = getenv("DOCUMENT_ROOT");
-	auto QueryString = getenv("QUERY_STRING");
-	auto ServerProtocol = getenv("SERVER_PROTOCOL");
-	auto ServerSoftware = getenv("SERVER_SOFTWARE");
-
-	if (DocumentRoot == nullptr)
-	{
-		std::cerr << "DOCUMENT_ROOT not set\n";
-		return 1;
-	}
+	const char* QueryString = getenv("QUERY_STRING");
 
 	if (QueryString == nullptr)
 	{
@@ -123,21 +113,9 @@ int main(int argc, char const * const * argv, char const * const * env)
 		return 1;
 	}
 
-	if (ServerProtocol == nullptr)
-	{
-		std::cerr << "SERVER_PROTOCOL not set\n";
-		return 1;
-	}
-
-	if (ServerSoftware == nullptr)
-	{
-		std::cerr << "SERVER_SOFTWARE not set\n";
-		return 1;
-	}
-
 	try
 	{
-		stream(DocumentRoot, QueryString, ServerProtocol, ServerSoftware);
+		stream(".", QueryString);
 	}
 	catch (std::exception const & Exception)
 	{

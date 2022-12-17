@@ -1,6 +1,6 @@
 #include "Md5.hpp"
 #include "string.h"
-#include "md5/md5.h"
+#include <md5.h>
 
 namespace Rapid {
 

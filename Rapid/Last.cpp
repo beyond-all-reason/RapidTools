@@ -12,7 +12,7 @@ void LastT::save(LastT const & Last, StoreT & Store, std::string const & Prefix)
 {
 	TempFileT Temp{Store};
 	unsigned char Buffer[4];
-	Marshal::packLittle(Last.RevisionNum, Buffer);
+	Marshal::packBig(Last.RevisionNum, Buffer);
 	Temp.getOut().write(Buffer, 4);
 	Temp.getOut().write(Last.Digest.Buffer, 16);
 	Temp.commit(Store.getLastPath(Prefix));
@@ -41,7 +41,7 @@ LastT LastT::load(StoreT & Store, std::string const & Prefix)
 	GzipT In{Path, "rb"};
 	unsigned char Buffer[4];
 	In.readExpected(Buffer, 4);
-	Marshal::unpackLittle(Last.RevisionNum, Buffer);
+	Marshal::unpackBig(Last.RevisionNum, Buffer);
 	In.readExpected(Last.Digest.Buffer, 16);
 
 	return Last;

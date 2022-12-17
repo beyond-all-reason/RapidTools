@@ -11,6 +11,7 @@
 #include <string>
 #include <stdexcept>
 #include <vector>
+#include <sstream>
 
 namespace Rapid {
 
@@ -36,7 +37,11 @@ class PoolArchiveT
 	template<typename FunctorT>
 	void iterate(BitArrayT const & Bits, FunctorT Functor)
 	{
-		if (Bits.size() < mEntries.size()) throw std::runtime_error{"Not enough bits"};
+		if (Bits.size() < mEntries.size()) {
+			std::stringstream err;
+			err << "To few bits received: " << Bits.size() << " < " << mEntries.size();
+			throw std::runtime_error{err.str()};
+		}
 
 		auto BitIndex = 0;
 		for (auto & Pair : mEntries)

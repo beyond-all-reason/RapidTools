@@ -138,7 +138,7 @@ void processDiff(git_diff *Diff, StoreT& Store, PoolArchiveT& Archive, git_repos
 		PoolFileT File{Store};
 		git_blob * Blob;
 
-		checkRet(git_blob_lookup(&Blob, Repo, &Delta->new_file.oid), "git_blob_lookup");
+		checkRet(git_blob_lookup(&Blob, Repo, &Delta->new_file.id), "git_blob_lookup");
 		auto && BlobGuard = makeScopeGuard([&] { git_blob_free(Blob); });
 		auto Size = git_blob_rawsize(Blob);
 		auto Pointer = static_cast<char const *>(git_blob_rawcontent(Blob));
@@ -156,25 +156,29 @@ void processDiff(git_diff *Diff, StoreT& Store, PoolArchiveT& Archive, git_repos
 		switch (Delta->status) {
 			case GIT_DELTA_ADDED: {
 				switch(Delta->new_file.mode) {
+					case GIT_FILEMODE_BLOB_EXECUTABLE:
 					case GIT_FILEMODE_BLOB: {
 						std::cout << "A\t" << fullPath << "\n";
 						add(Delta, fullPath);
 					} break;
 					case GIT_FILEMODE_COMMIT: {
 						char buffer[128];
-						git_oid_tostr(buffer, 128, &Delta->new_file.oid);
+						git_oid_tostr(buffer, 128, &Delta->new_file.id);
 						submoduleHashes[std::string(Delta->new_file.path)] = {"" , buffer};
 						std::cout << "A\t" << fullPath << " " << buffer << "\n";
 					} break;
-					default:
-						throw std::runtime_error{"Unsupported mode"};
-
+					default: {
+						std::stringstream err;
+						err << "GIT_DELTA_ADDED: Unsupported mode for " << fullPath << ": " << Delta->new_file.mode;
+						throw std::runtime_error{err.str()};
+					}
 				}
 			} break;
 
 			case GIT_DELTA_MODIFIED:
 			{
 				switch(Delta->new_file.mode) {
+					case GIT_FILEMODE_BLOB_EXECUTABLE:
 					case GIT_FILEMODE_BLOB: {
 						std::cout << "M\t" << fullPath << "\n";
 						add(Delta, fullPath);
@@ -182,20 +186,23 @@ void processDiff(git_diff *Diff, StoreT& Store, PoolArchiveT& Archive, git_repos
 					case GIT_FILEMODE_COMMIT: {
 						char buffer1[128];
 						char buffer2[128];
-						git_oid_tostr(buffer1, 128, &Delta->old_file.oid);
-						git_oid_tostr(buffer2, 128, &Delta->new_file.oid);
+						git_oid_tostr(buffer1, 128, &Delta->old_file.id);
+						git_oid_tostr(buffer2, 128, &Delta->new_file.id);
 						submoduleHashes[std::string(Delta->new_file.path)] = {buffer1 , buffer2};
 						std::cout << "M\t" << fullPath << " " << buffer1 << " => " << buffer2 << "\n";
 					} break;
-					default:
-						throw std::runtime_error{"Unsupported mode"};
-
+					default: {
+						std::stringstream err;
+						err << "GIT_DELTA_ADDED: Unsupported mode for " << fullPath << ": " << Delta->new_file.mode;
+						throw std::runtime_error{err.str()};
+					}
 				}
 			} break;
 
 			case GIT_DELTA_DELETED:
 			{
 				switch(Delta->old_file.mode) {
+					case GIT_FILEMODE_BLOB_EXECUTABLE:
 					case GIT_FILEMODE_BLOB: {
 						std::cout << "D\t" << fullPath << "\n";
 						Archive.remove(Delta->new_file.path);
@@ -204,9 +211,11 @@ void processDiff(git_diff *Diff, StoreT& Store, PoolArchiveT& Archive, git_repos
 						std::cout << "D\t" << fullPath << " (submodule)\n";
 						Archive.removePrefix(fullPath);
 					} break;
-					default:
-						throw std::runtime_error{"Unsupported mode"};
-
+					default: {
+						std::stringstream err;
+						err << "GIT_DELTA_ADDED: Unsupported mode for " << fullPath << ": " << Delta->new_file.mode;
+						throw std::runtime_error{err.str()};
+					}
 				}
 			} break;
 
@@ -271,8 +280,8 @@ void buildGit(
 	std::string const & Prefix)
 {
 	// Initialize libgit2
-	checkRet(git_threads_init(), "git_threads_init()");
-	auto && ThreadsGuard = makeScopeGuard([&] { git_threads_shutdown(); });
+	checkRet(git_libgit2_init() == 1 ? 0 : -1, "git_libgit2_init()");
+	auto && ThreadsGuard = makeScopeGuard([&] { git_libgit2_shutdown(); });
 
 	// Load the git repo
 	git_repository * Repo;
@@ -307,7 +316,7 @@ void buildGit(
 	git_commit * Commit;
 	checkRet(git_commit_lookup(&Commit, Repo, &DestOid), "git_commit_lookup");
 	auto && CommitGuard = makeScopeGuard([&] { git_commit_free(Commit); });
-	std::size_t AncestorCount = git_commit_parentcount(Commit);
+	//std::size_t AncestorCount = git_commit_parentcount(Commit);
 	std::string TestVersion = concat(std::to_string(CommitCount), '-', ShortHash);
 	auto CommitInfo = extractVersion(git_commit_message_raw(Commit), TestVersion);
 
