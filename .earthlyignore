@@ -1,3 +1,3 @@
 /builddir*
-/Scripts/*.pyc
 /out
+Earthfile
