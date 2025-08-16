@@ -1,5 +1,7 @@
 #include "BitArray.hpp"
 
+#include <cstdint>
+
 namespace Rapid {
 
 void BitArrayT::append(char const * Bytes, std::size_t Size)
