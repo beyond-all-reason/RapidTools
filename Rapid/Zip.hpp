@@ -22,7 +22,7 @@ class ZipT
 	void iterateFiles(FunctorT Functor)
 	{
 		struct zip_stat Stat;
-		auto NumEntries = zip_get_num_files(mZip);
+		auto NumEntries = zip_get_num_entries(mZip, 0);
 		for (int I = 0; I != NumEntries; ++I)
 		{
 			auto Error = zip_stat_index(mZip, I, 0, &Stat);

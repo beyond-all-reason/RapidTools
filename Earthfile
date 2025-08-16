@@ -1,8 +1,9 @@
-VERSION 0.6
-FROM docker.io/library/debian:bookworm
-WORKDIR /workdir
+VERSION 0.8
 
 install:
+    ARG DEBIAN_VERSION
+    FROM docker.io/library/debian:$DEBIAN_VERSION
+    WORKDIR /workdir
     RUN apt-get update \
      && apt-get upgrade -y \
      && apt-get install --no-install-recommends -y build-essential debhelper \
@@ -10,6 +11,7 @@ install:
         libzip-dev zlib1g-dev pkg-config cmake
 
 build:
+    ARG DEBIAN_VERSION
     ARG VERSION=0.0.0
     FROM +install
     RUN mkdir /build
@@ -18,6 +20,7 @@ build:
         -DBUILD_SHARED_LIBS=YES \
         -DRAPIDTOOLS_VERSION=$VERSION \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCPACK_DEBIAN_PACKAGE_RELEASE=0+debian${DEBIAN_VERSION} \
         -G Ninja
     RUN cmake --build /build
     RUN cd /build && cpack -G DEB
