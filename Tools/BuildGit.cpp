@@ -277,7 +277,9 @@ void buildGit(
 	std::string const & Modinfo,
 	std::string const & StorePath,
 	std::string const & GitHash,
-	std::string const & Prefix)
+	std::string const & Prefix,
+	std::string const & rapidTag,
+	std::string const & gameVersion)
 {
 	// Initialize libgit2
 	checkRet(git_libgit2_init() == 1 ? 0 : -1, "git_libgit2_init()");
@@ -319,6 +321,10 @@ void buildGit(
 	//std::size_t AncestorCount = git_commit_parentcount(Commit);
 	std::string TestVersion = concat(std::to_string(CommitCount), '-', ShortHash);
 	auto CommitInfo = extractVersion(git_commit_message_raw(Commit), TestVersion);
+
+	// Override branch/tag and version if provided
+	std::string effectiveTag = rapidTag.empty() ? CommitInfo.Branch : rapidTag;
+	std::string effectiveVersion = gameVersion.empty() ? CommitInfo.Version : gameVersion;
 
 	// Initialize the store
 	StoreT Store{StorePath};
@@ -362,7 +368,7 @@ void buildGit(
 	auto Size = git_blob_rawsize(Blob);
 	auto Pointer = static_cast<char const *>(git_blob_rawcontent(Blob));
 	PoolFileT File{Store};
-	replaceVersion(Pointer, Size, CommitInfo.Version, [&](char const * Data, std::size_t Length)
+	replaceVersion(Pointer, Size, effectiveVersion, [&](char const * Data, std::size_t Length)
 	{
 		File.write(Data, Length);
 	});
@@ -373,7 +379,7 @@ void buildGit(
 	// Add tags and save versions.gz
 	VersionsT Versions{Store};
 	Versions.load();
-	std::string const Tag = concat(Prefix, ':', CommitInfo.Branch);
+	std::string const Tag = concat(Prefix, ':', effectiveTag);
 	std::string const Tag2 = concat(Prefix, ":git:", GitHash);
 	Versions.add(Tag, ArchiveEntry);
 	Versions.add(Tag2, ArchiveEntry);
@@ -408,12 +414,17 @@ int main(int argc, char const * const * argv)
 {
 	umask(0002);
 
-	if (argc != 7)
+	if (argc < 7 || argc > 9)
 	{
 		std::cerr << "Usage: " << argv[0] <<
-			" <Git Path> <Mod Root> <Modinfo> <Store Path> <Git Hash> <Prefix>\n";
+			" <Git Path> <Mod Root> <Modinfo> <Store Path> <Git Hash> <Prefix> [RapidTag] [GameVersion]\n";
+		std::cerr << "If [RapidTag] and/or [GameVersion] are omitted, defaults will be used.\n";
 		return 1;
 	}
+
+	// Parse optional arguments
+	std::string rapidTag = (argc >= 8) ? argv[7] : "";
+	std::string gameVersion = (argc == 9) ? argv[8] : "";
 
 	try
 	{
@@ -423,7 +434,9 @@ int main(int argc, char const * const * argv)
 			argv[3],
 			argv[4],
 			argv[5],
-			argv[6]);
+			argv[6],
+			rapidTag,
+			gameVersion);
 	}
 	catch (std::exception const & Exception)
 	{
