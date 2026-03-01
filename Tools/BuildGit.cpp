@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <optional>
 
 #include <git2.h>
 #include <sys/types.h>
@@ -79,8 +80,17 @@ struct CommitInfoT
 	bool MakeZip;
 };
 
-CommitInfoT extractVersion(std::string const & Log, std::string const & RevisionString)
+CommitInfoT extractVersion(
+	std::string const & Log,
+	std::string const & RevisionString,
+	std::optional<std::string> const & RapidBranch,
+	std::optional<std::string> const & VersionOverride)
 {
+	if (RapidBranch) {
+		auto version = VersionOverride ? *VersionOverride : concat(*RapidBranch, "-", RevisionString);
+		return {*RapidBranch, version, false};
+	}
+
 	std::string const StableString{"STABLE"};
 	std::string const VersionString{"VERSION{"};
 
@@ -277,7 +287,9 @@ void buildGit(
 	std::string const & Modinfo,
 	std::string const & StorePath,
 	std::string const & GitHash,
-	std::string const & Prefix)
+	std::string const & Prefix,
+	std::optional<std::string> const & RapidBranch,
+	std::optional<std::string> const & VersionOverride)
 {
 	// Initialize libgit2
 	checkRet(git_libgit2_init() == 1 ? 0 : -1, "git_libgit2_init()");
@@ -318,7 +330,7 @@ void buildGit(
 	auto && CommitGuard = makeScopeGuard([&] { git_commit_free(Commit); });
 	//std::size_t AncestorCount = git_commit_parentcount(Commit);
 	std::string TestVersion = concat(std::to_string(CommitCount), '-', ShortHash);
-	auto CommitInfo = extractVersion(git_commit_message_raw(Commit), TestVersion);
+	auto CommitInfo = extractVersion(git_commit_message_raw(Commit), TestVersion, RapidBranch, VersionOverride);
 
 	// Initialize the store
 	StoreT Store{StorePath};
@@ -408,12 +420,19 @@ int main(int argc, char const * const * argv)
 {
 	umask(0002);
 
-	if (argc != 7)
+	if (argc < 7 || argc > 9)
 	{
 		std::cerr << "Usage: " << argv[0] <<
-			" <Git Path> <Mod Root> <Modinfo> <Store Path> <Git Hash> <Prefix>\n";
+			" <Git Path> <Mod Root> <Modinfo> <Store Path> <Git Hash> <Prefix> [Branch] [Version]\n\n";
+		std::cerr << "- [Branch] is by default 'test' or 'stable' (depending if commit log contains STABLE/VERSION{} or not)\n";
+		std::cerr << "- [Version] allows to override the default generated version ({branch}-{num_commits}-{commit}) when [Branch] is set\n";
 		return 1;
 	}
+
+	// Parse optional arguments
+	std::optional<std::string> RapidBranch, VersionOverride;
+	if (argc >= 8) RapidBranch = argv[7];
+	if (argc >= 9) VersionOverride = argv[8];
 
 	try
 	{
@@ -423,7 +442,9 @@ int main(int argc, char const * const * argv)
 			argv[3],
 			argv[4],
 			argv[5],
-			argv[6]);
+			argv[6],
+			RapidBranch,
+			VersionOverride);
 	}
 	catch (std::exception const & Exception)
 	{
