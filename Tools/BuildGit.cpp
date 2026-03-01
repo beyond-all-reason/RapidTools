@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <optional>
 
 #include <git2.h>
 #include <sys/types.h>
@@ -79,8 +80,17 @@ struct CommitInfoT
 	bool MakeZip;
 };
 
-CommitInfoT extractVersion(std::string const & Log, std::string const & RevisionString)
+CommitInfoT extractVersion(
+	std::string const & Log,
+	std::string const & RevisionString,
+	std::optional<std::string> const & RapidBranch,
+	std::optional<std::string> const & VersionOverride)
 {
+	if (RapidBranch) {
+		auto version = VersionOverride ? *VersionOverride : concat(*RapidBranch, "-", RevisionString);
+		return {*RapidBranch, version, false};
+	}
+
 	std::string const StableString{"STABLE"};
 	std::string const VersionString{"VERSION{"};
 
@@ -278,8 +288,8 @@ void buildGit(
 	std::string const & StorePath,
 	std::string const & GitHash,
 	std::string const & Prefix,
-	std::string const & rapidTag,
-	std::string const & gameVersion)
+	std::optional<std::string> const & RapidBranch,
+	std::optional<std::string> const & VersionOverride)
 {
 	// Initialize libgit2
 	checkRet(git_libgit2_init() == 1 ? 0 : -1, "git_libgit2_init()");
@@ -320,11 +330,7 @@ void buildGit(
 	auto && CommitGuard = makeScopeGuard([&] { git_commit_free(Commit); });
 	//std::size_t AncestorCount = git_commit_parentcount(Commit);
 	std::string TestVersion = concat(std::to_string(CommitCount), '-', ShortHash);
-	auto CommitInfo = extractVersion(git_commit_message_raw(Commit), TestVersion);
-
-	// Override branch/tag and version if provided
-	std::string effectiveTag = rapidTag.empty() ? CommitInfo.Branch : rapidTag;
-	std::string effectiveVersion = gameVersion.empty() ? CommitInfo.Version : gameVersion;
+	auto CommitInfo = extractVersion(git_commit_message_raw(Commit), TestVersion, RapidBranch, VersionOverride);
 
 	// Initialize the store
 	StoreT Store{StorePath};
@@ -368,7 +374,7 @@ void buildGit(
 	auto Size = git_blob_rawsize(Blob);
 	auto Pointer = static_cast<char const *>(git_blob_rawcontent(Blob));
 	PoolFileT File{Store};
-	replaceVersion(Pointer, Size, effectiveVersion, [&](char const * Data, std::size_t Length)
+	replaceVersion(Pointer, Size, CommitInfo.Version, [&](char const * Data, std::size_t Length)
 	{
 		File.write(Data, Length);
 	});
@@ -379,7 +385,7 @@ void buildGit(
 	// Add tags and save versions.gz
 	VersionsT Versions{Store};
 	Versions.load();
-	std::string const Tag = concat(Prefix, ':', effectiveTag);
+	std::string const Tag = concat(Prefix, ':', CommitInfo.Branch);
 	std::string const Tag2 = concat(Prefix, ":git:", GitHash);
 	Versions.add(Tag, ArchiveEntry);
 	Versions.add(Tag2, ArchiveEntry);
@@ -417,14 +423,16 @@ int main(int argc, char const * const * argv)
 	if (argc < 7 || argc > 9)
 	{
 		std::cerr << "Usage: " << argv[0] <<
-			" <Git Path> <Mod Root> <Modinfo> <Store Path> <Git Hash> <Prefix> [RapidTag] [GameVersion]\n";
-		std::cerr << "If [RapidTag] and/or [GameVersion] are omitted, defaults will be used.\n";
+			" <Git Path> <Mod Root> <Modinfo> <Store Path> <Git Hash> <Prefix> [Branch] [Version]\n\n";
+		std::cerr << "- [Branch] is by default 'test' or 'stable' (depending if commit log contains STABLE/VERSION{} or not)\n";
+		std::cerr << "- [Version] allows to override the default generated version ({branch}-{num_commits}-{commit}) when [Branch] is set\n";
 		return 1;
 	}
 
 	// Parse optional arguments
-	std::string rapidTag = (argc >= 8) ? argv[7] : "";
-	std::string gameVersion = (argc == 9) ? argv[8] : "";
+	std::optional<std::string> RapidBranch, VersionOverride;
+	if (argc >= 8) RapidBranch = argv[7];
+	if (argc >= 9) VersionOverride = argv[8];
 
 	try
 	{
@@ -435,8 +443,8 @@ int main(int argc, char const * const * argv)
 			argv[4],
 			argv[5],
 			argv[6],
-			rapidTag,
-			gameVersion);
+			RapidBranch,
+			VersionOverride);
 	}
 	catch (std::exception const & Exception)
 	{
