@@ -34,7 +34,7 @@ for REPO in $REPOS; do
 			git reset --hard origin/master
 			git submodule sync --recursive
 			git submodule update --recursive --remote --init
-			~/bin/BuildGit "$REPO" "$MODROOT" "$MODINFO" "$PACKAGES/$TAG" "$REMOTE" "$TAG" "$CUSTOM_RAPID_TAG" "$CUSTOM_GAME_VERSION"
+			~/bin/BuildGit "$REPO" "$MODROOT" "$MODINFO" "$PACKAGES/$TAG" "$REMOTE" "$TAG"
 			echo Finished: $(date)
 			) &> $PACKAGES/$TAG/log.txt
 			git log -1 --pretty=format:"%an commited %h: %s" | ~/bin/loggit.py "$TAG"
